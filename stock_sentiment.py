@@ -2,6 +2,7 @@ import praw
 import pandas as pd
 import numpy as np
 import yfinance as yf
+from statsmodels.tsa.arima.model import ARIMA
 from nltk.sentiment import SentimentIntensityAnalyzer
 from datetime import datetime, timedelta
 import os
@@ -27,7 +28,7 @@ class StockSentimentAnalyzer:
     def get_reddit_posts(self, stock_symbol, limit=100):
         """Fetch Reddit posts about a specific stock."""
         posts = []
-        for post in self.reddit.subreddit('stocks+investing+wallstreetbets').search(
+        for post in self.reddit.subreddit('stocks+investing+wallstreetbets+IndiaInvestments+StockMarket').search(
             f'{stock_symbol} stock', limit=limit
         ):
             posts.append({
@@ -69,12 +70,68 @@ class StockSentimentAnalyzer:
         else:
             return "Neutral (Mixed sentiment)"
 
+
+
+def get_stock_history(stock_symbol, period="1y"):
+    """
+    Fetch 1 year of historical data (daily) by default.
+    """
+    stock = yf.Ticker(stock_symbol)
+    df = stock.history(period=period)
+    df.sort_index(inplace=True)
+    return df
+
+def prepare_data_for_arima(df):
+   
+    close_series = df['Close'].asfreq('B')  # asfreq('B') sets business-day frequency
+    # Optionally forward fill missing days
+    close_series.fillna(method='ffill', inplace=True)
+    return close_series
+
+def train_arima_model(series, order=(5,1,0)):
+    """
+    Fits an ARIMA model to the provided time series.
+    :param series: Pa  ndas Series of stock prices.
+    :param order: (p, d, q) ARIMA order.
+    :return: Fitted ARIMA model.
+    """
+    model = ARIMA(series, order=order)
+    model_fit = model.fit()
+    return model_fit
+       
+def predict_next_close(model_fit, steps=1):
+
+    
+    forecast = model_fit.forecast(steps=steps)
+    return forecast
+
+def predict_tomorrows_closing_price(stock_symbol):
+    # 1. Fetch data
+    df = get_stock_history(stock_symbol, period="1y")  # last year
+    close_series = prepare_data_for_arima(df)
+    
+    # 2. Train ARIMA model
+    model_fit = train_arima_model(close_series, order=(1,1,1))
+    
+    # 3. Forecast tomorrow
+    forecast = predict_next_close(model_fit, steps=1)
+    
+    # 4. Return forecasted price
+    return float(forecast.iloc[-1])
+
+
 def main():
     # Initialize analyzer
     analyzer = StockSentimentAnalyzer()
     
     # Get user input
-    stock_symbol = input("Enter stock symbol (e.g., AAPL): ").upper()
+    stock_symbol = input("Enter stock symbol (e.g., TSLA): ").upper()
+    stock=yf.Ticker(stock_symbol)
+    if not stock.info:
+        print("Invalid stock symbol. Please try again.")
+        return
+    company_name= stock.info["longName"]
+    print(f"Company Name: {company_name}")
     
     try:
         # Get prediction
@@ -83,12 +140,15 @@ def main():
         print(prediction)
         
         # Show some sample posts
-        posts = analyzer.get_reddit_posts(stock_symbol, limit=5)
+        posts = analyzer.get_reddit_posts(company_name, limit=5)
         print("\nRecent Reddit posts about this stock:")
         for _, post in posts.iterrows():
             print(f"\nTitle: {post['title']}")
             print(f"Sentiment: {analyzer.analyze_sentiment(post['text']):.2f}")
-            
+
+        prediction = predict_tomorrows_closing_price(stock_symbol)
+        print(f"Predicted closing price for {stock_symbol} tomorrow: ${prediction:.2f}")
+    
     except Exception as e:
         print(f"Error: {str(e)}")
 
