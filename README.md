@@ -21,13 +21,3 @@ REDDIT_USER_AGENT=your_user_agent
 python stock_sentiment.py
 ```
 
-## Features
-
-- Fetches Reddit posts and comments about specific stocks
-- Analyzes sentiment using natural language processing
-- Correlates sentiment with stock price movements
-- Provides basic trend predictions
-
-## Note
-
-This is a beginner-friendly project for educational purposes. Always do your own research before making investment decisions. 
